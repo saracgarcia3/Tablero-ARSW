@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Interactive BB</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- p5.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.7.1/p5.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.7.1/addons/p5.dom.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.7.1/addons/p5.sound.min.js"></script>
+
+  <!-- React 18 UMD + Babel -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 20px; }
+    #container canvas { border: 1px solid #ddd; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- ÚNICO bloque JSX -->
+  <script type="text/babel">
+    // Calcula ws:// o wss:// según entorno
+    function BBServiceURL() {
+      const host = window.location.host;
+      return (host.startsWith("localhost") ? "ws://" : "wss://") + host + "/bbService";
+    }
+
+    class WSBBChannel {
+      constructor(url, onReceive) {
+        this.ws = new WebSocket(url);
+        this.ws.onopen = () => console.log("WS open:", url);
+        this.ws.onmessage = (e) => {
+          if (e.data !== "Connection established.") onReceive(e.data);
+        };
+        this.ws.onerror = (e) => console.error("WS error:", e);
+      }
+      send(x, y) { this.ws.send(`{"x":${x},"y":${y}}`); }
+      close() { try { this.ws.close(); } catch(_){} }
+    }
+
+    function BBCanvas() {
+      const myp5 = React.useRef(null);
+      const wsRef = React.useRef(null);
+
+      const sketch = (p) => {
+        p.setup = () => p.createCanvas(700, 410);
+        p.draw = () => {
+          if (p.mouseIsPressed) {
+            p.fill(0);
+            p.ellipse(p.mouseX, p.mouseY, 20, 20);
+            if (wsRef.current) wsRef.current.send(p.mouseX, p.mouseY);
+          }
+        };
+      };
+
+      function drawPoint(x, y) {
+        if (myp5.current) myp5.current.ellipse(x, y, 20, 20);
+      }
+
+      React.useEffect(() => {
+        myp5.current = new p5(sketch, "container");
+        wsRef.current = new WSBBChannel(BBServiceURL(), (msg) => {
+          const { x, y } = JSON.parse(msg);
+          drawPoint(x, y);
+        });
+        return () => wsRef.current && wsRef.current.close();
+      }, []);
+
+      return (
+        <div>
+          <p>Canvas listo. Abre otra pestaña para ver el trazo en tiempo real.</p>
+          <div id="container"></div>
+        </div>
+      );
+    }
+
+    function App(){
+      return (
+        <div>
+          <h2>Tablero Interactivo 🎨​</h2>
+          <p>Endpoint de estado: <a href="/status">/status</a></p>
+          <BBCanvas/>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+  </script>
+</body>
+</html>
